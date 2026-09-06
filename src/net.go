@@ -1,23 +1,60 @@
 package main
 
-import "github.com/cakturk/go-netstat/netstat"
+import (
+	"fmt"
 
-func GetOpenedPorts() ([]uint16, []string, error) {
-	socks, err := netstat.UDPSocks(netstat.NoopFilter)
+	"github.com/cakturk/go-netstat/netstat"
+)
+
+type PortInfo struct {
+	IP    string
+	Port  uint16
+	Proto string
+}
+
+func GetOpenedPorts() ([]PortInfo, error) {
+	var results []PortInfo
+	seen := make(map[string]bool)
+
+	tcpSocks, err := netstat.TCPSocks(func(s *netstat.SockTabEntry) bool {
+		return s.State == netstat.Listen
+	})
 
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	var ports []uint16
-	var addrs []string
+	udpSocks, err := netstat.UDPSocks(netstat.NoopFilter)
 
-	for _, sock := range socks {
-		sock_local_addr := sock.LocalAddr
-
-		ports = append(ports, sock_local_addr.Port)
-		addrs = append(addrs, sock_local_addr.IP.String())
+	if err != nil {
+		return nil, err
 	}
 
-	return ports, addrs, nil
+	for _, sock := range tcpSocks {
+		key := fmt.Sprintf("tcp-%s:%d", sock.LocalAddr.IP, sock.LocalAddr.Port)
+
+		if !seen[key] {
+			seen[key] = true
+			results = append(results, PortInfo{
+				IP:    sock.LocalAddr.IP.String(),
+				Port:  sock.LocalAddr.Port,
+				Proto: "tcp",
+			})
+		}
+	}
+
+	for _, sock := range udpSocks {
+		key := fmt.Sprintf("udp-%s:%d", sock.LocalAddr.IP, sock.LocalAddr.Port)
+
+		if !seen[key] {
+			seen[key] = true
+			results = append(results, PortInfo{
+				IP:    sock.LocalAddr.IP.String(),
+				Port:  sock.LocalAddr.Port,
+				Proto: "udp",
+			})
+		}
+	}
+
+	return results, nil
 }
